@@ -9,10 +9,12 @@ import me.yenaryenar.resulttypespringtransactiontest.entity.Post
 import me.yenaryenar.resulttypespringtransactiontest.repository.PostRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.interceptor.TransactionAspectSupport
 
 @Service
-class PostService(private val postRepository: PostRepository) {
+class PostService(
+    private val postRepository: PostRepository,
+    private val postTxService: PostTxService
+) {
     /**
      * Create a new post with transaction support
      * Modified to demonstrate transaction rollback issue
@@ -48,23 +50,9 @@ class PostService(private val postRepository: PostRepository) {
      * Public API with exception handling
      * Uses self-injection to ensure AOP proxy is used for transaction management
      */
-    @Transactional
     fun updatePost(id: Long, request: PostUpdateRequest): Result<PostResponse> {
         return runCatching {
-            val existingPost = postRepository.findById(id).orElse(null)
-                ?: return@runCatching Result.failure("Post not found with ID: $id")
-
-            existingPost.update(request.title, request.content)
-            val updatedPost = postRepository.save(existingPost)
-
-            if (request.title.contains("FORCE_ERROR")) {
-                // 직접 롤백 마킹 is suck...
-                TransactionAspectSupport.currentTransactionStatus().setRollbackOnly()
-
-                return@runCatching Result.failure("Forced rollback!")
-            }
-
-            Result.success(PostResponse.fromEntity(updatedPost), "Success")
+            return@runCatching postTxService.updatePostTransaction(id, request)
         }.getOrElse { e ->
             Result.failure("Failed to update post: ${e.message}")
         }
